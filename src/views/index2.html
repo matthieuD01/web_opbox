@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>USB Control Panel</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/static/jquery.js"></script>
+    <script src="/static/handler.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            background-color: black;
+            color: lightgrey;
+            font-family: Courier, monospace;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .container {
+            display: flex;
+            height: 100%;
+        }
+
+        .left-panel {
+            width: 60%;
+            height: 70%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .right-panel {
+            width: 30%;
+            height: 50%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+        }
+
+        /* Bottom container to hold two distinct sides: left for control commands, right for mode/pulse-time controls */
+        .bottom-panel {
+            width: 95%;
+            display: flex;
+            flex-direction: row;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 20px;
+        }
+
+        /* Bottom-left for control commands */
+        .bottom-left {
+            display: flex;
+            flex-direction: column;
+            justify-content: left;
+            align-items: flex-start;
+        }
+
+        /* Bottom-right for mode switch and pulse time input */
+        .bottom-right {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+
+        .range {
+            width: 500px;
+        }
+
+        .inps {
+            font-family: courier;
+            color: white;
+            background: black;
+            border: solid 1px white;
+            font-size: 13px;
+            width: 50px;
+        }
+
+        .inpfile {
+            width: 300px;
+            border: solid 1px white;
+            background: black;
+            color: white;
+            outline: none;
+            font-size: 13px;
+        }
+
+        .inpfile:disabled {
+            background: grey;
+        }
+
+        button {
+            color: rgb(0, 0, 0);
+            padding: 10px 10px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s, border 0.3s;
+        }
+
+        button.default-state {
+            background: green;
+            border: solid 2px darkgreen;
+        }
+
+        button.default-state:hover {
+            background: lightgreen;
+            border-color: green;
+        }
+
+        button.active-state {
+            background: red;
+            border: solid 2px darkred;
+        }
+
+        button.active-state:hover {
+            background: darkred;
+            border-color: red;
+        }
+
+        #chart {
+            width: 100%;
+            height: 100%;
+            background: rgb(255, 255, 255);
+        }
+
+        #deviceStatus,
+        #sliders {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="left-panel">
+            <!-- Chart Section -->
+            <div id="chart"></div>
+        </div>
+        <div class="right-panel">
+            <!-- Status Section -->
+            <div id="deviceStatus">
+                <span>USB Status:</span>
+                <span id="usbStateLabel" class="disconnected" style="color:red">Disconnected</span>
+                <button id="btnToggleUsb">Connect USB</button>
+
+                <div style="margin-top: 10px;">
+                    <span>Exp Status: <span id="expStatus">Idle.</span></span>
+                    <!-- Input to name the experiment -->
+                    <input type="text" id="expNameInput" class="inpfile" placeholder="Initials_YYYYMMDD_ExpName"
+                        style="margin-left: 10px; width: 250px;" />
+                    <span id="expName" style="margin-left:10px; display: none;"></span>
+                    <button id="expButton">Start exp</button>
+                </div>
+            </div>
+
+            <!-- Sliders -->
+            <div id="sliders">
+                <div>Gain (dB):
+                    <input class="range" type="range" id="gainSlider" step="0.5" min="-28" max="+65">
+                    <input class="inps" id="gain">
+                </div>
+                <div>Range (us):
+                    <input class="range" type="range" id="rangeSlider" step="0.5" min="0" max="40">
+                    <input class="inps" id="range">
+                </div>
+                <div>Delay (us):
+                    <input class="range" type="range" id="delaySlider" step="0.5" min="0" max="20">
+                    <input class="inps" id="delay">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom panel to hold control commands on the left and pulse-echo/transmission controls on the right -->
+    <div class="bottom-panel">
+        <!-- Control Transfer (bottom-left) -->
+        <div class="bottom-left">
+            <div style="margin-bottom: 5px;">
+                Register Addr:
+                <input type="text" id="ctrlOutRegAddr" style="width:50px;">
+                Data:
+                <input type="text" id="ctrlOutData" style="width:50px;">
+                <button id="btnCtrlOut">Ctrl_out</button>
+            </div>
+
+            <div style="margin-bottom: 5px;">
+                Register Addr:
+                <input type="text" id="ctrlInRegAddr" style="width:50px;">
+                Length:
+                <input type="text" id="ctrlInLength" style="width:50px;">
+                <button id="btnCtrlIn">Ctrl_in</button>
+            </div>
+
+            <div>
+                Direction:
+                <input type="text" id="directDirection" style="width:50px;">
+                Order:
+                <input type="text" id="directOrder" style="width:50px;">
+                Value:
+                <input type="text" id="directValue" style="width:50px;">
+                Index:
+                <input type="text" id="directIndex" style="width:50px;">
+                Len/Data:
+                <input type="text" id="directLenOrData" style="width:50px;">
+                <button id="btnDirectOrder">Direct order</button>
+            </div>
+        </div>
+
+        <!-- Mode and Pulse Time controls (bottom-right) -->
+        <div class="bottom-right">
+            <!-- Toggle between Pulse-echo and Transmission mode -->
+            <div style="margin-top: 10px;">
+                <label for="modeSwitchButton">Current mode: Transmission</label>
+                <button id="modeSwitchButton">Switch to pulse-echo</button>
+            </div>
+            <!-- Pulse time input -->
+            <div style="margin-top: 10px;">
+                <label for="pulseTimeInput">Pulse time (us):</label>
+                <input type="number" id="pulseTimeInput" step="0.1" min="0" max="1.9" value="0.2"
+                    style="width:60px; margin-left:5px;">
+                <button id="pulseTimeButton" disabled>Set value</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var socket = io();
+
+        // Observed state object
+        const systemstate = {};
+        const observedState = new Proxy(systemstate, handler);
+        const dataCooloff = 100;
+        let lastDataUpdate = Date.now();
+        console.log(lastDataUpdate)
+
+        observedState.onChange = (change) => {
+            // ...
+        };
+
+
+
+        // Functions to call the endpoints
+        function set_pulse_echo_mode() {
+            $.post('/set_pulse_echo_mode', {}, function (response) {
+                console.log(response);
+            })
+        }
+
+        function set_transmission_mode() {
+            console.log('Attempting to set transmission mode...');
+            $.post('/set_transmission_mode', {})
+                .done(function (response) {
+                    console.log('Transmission mode set:', response);
+                })
+                .fail(function (xhr, status, error) {
+                    console.error('Failed to set transmission mode:', error);
+                });
+        }
+
+        function updateUI() {
+            console.log('Updating UI... Observed state is: ', observedState);
+
+            // USB Connection
+            $("#usbStateLabel")
+                .text(observedState.usbConnected ? "Connected" : "Disconnected")
+                .css("color", observedState.usbConnected ? "green" : "red")
+                .attr("class", observedState.usbConnected ? "connected" : "disconnected");
+
+            const btnToggleUsb = document.getElementById('btnToggleUsb');
+            if (observedState.usbConnected) {
+                btnToggleUsb.classList.add('active-state');
+                btnToggleUsb.classList.remove('default-state');
+                btnToggleUsb.textContent = 'Disconnect USB';
+            } else {
+                btnToggleUsb.classList.add('default-state');
+                btnToggleUsb.classList.remove('active-state');
+                btnToggleUsb.textContent = 'Connect USB';
+            }
+
+            // Experiment running status
+            const expRunning = !!observedState.expRunning;
+            $("#expStatus").text(expRunning ? "Running..." : "Idle.");
+            $("#expButton").text(expRunning ? "Stop exp" : "Start exp");
+            $("#expNameInput").toggle(!expRunning);
+            $("#expName")
+                .text(observedState.expName || "")
+                .toggle(expRunning);
+
+            // Keep the expNameInput in sync if changed
+            if (observedState.expName !== undefined) {
+                $("#expNameInput").val(observedState.expName);
+            }
+
+            if (observedState.transmission) {
+                // Currently in transmission mode, so show the option to switch to pulse-echo mode
+                $("label[for='modeSwitchButton']").text("Current mode: Transmission");
+                $("#modeSwitchButton").text("Switch to pulse-echo");
+            } else {
+                // Currently in pulse-echo mode, so show the option to switch to transmission mode
+                $("label[for='modeSwitchButton']").text("Current mode: Pulse-echo");
+                $("#modeSwitchButton").text("Switch to transmission");
+            }
+
+            // Sliders: disable when exp is running
+            $("#gainSlider, #rangeSlider, #delaySlider").prop("disabled", expRunning);
+            $("#gain, #range, #delay").prop("disabled", expRunning);
+
+            // Mode & pulse-time controls also disabled if experiment is running
+            $("#modeSwitchButton, #pulseTimeInput, #pulseTimeButton").prop("disabled", expRunning);
+
+            // Enable/disable the button if the input matches the last set
+            pulseTimeVal = parseFloat($("#pulseTimeInput").val());
+            console.log(`pulseTimeVal is ${pulseTimeVal}, observedState pulse time is ${observedState.pulseTime} and they are equal is: ${pulseTimeVal === observedState.pulseTime}`);
+            if (pulseTimeVal === observedState.pulseTime) {
+                console.log('Disabling pulse time button...');
+                $("#pulseTimeButton").prop("disabled", true);
+            } else if (!expRunning) {
+                $("#pulseTimeButton").prop("disabled", false);
+            }
+
+
+            // Slider values
+            $("#gainSlider").val(observedState.gain);
+            $("#rangeSlider").val(observedState.range);
+            $("#delaySlider").val(observedState.delay);
+
+            $("#gain").val(observedState.gain);
+            $("#range").val(observedState.range);
+            $("#delay").val(observedState.delay);
+
+            // Emit updated observedState to server
+            // socket.emit('systemstate', observedState);
+        }
+
+        // Listen for systemstate from server
+        socket.on('systemstate', (msg) => {
+            console.log('Received systemstate data.. ', msg);
+            for (const key in msg) {
+                observedState[key] = msg[key];
+            }
+            updateUI();
+        });
+
+        // Debounce logic for sliders
+        let sliderTimeout;
+        function debounceSlider(fn, delay) {
+            clearTimeout(sliderTimeout);
+            sliderTimeout = setTimeout(fn, delay);
+        }
+
+        function handleSliderChange(textInput = false) {
+            console.log('Updating sliders...');
+            let data;
+            if (textInput) {
+                data = {
+                    "gain": parseFloat($("#gain").val()),
+                    "range": parseFloat($("#range").val()),
+                    "delay": parseFloat($("#delay").val())
+                }
+            } else {
+                data = {
+                    "gain": parseFloat($("#gainSlider").val()),
+                    "range": parseFloat($("#rangeSlider").val()),
+                    "delay": parseFloat($("#delaySlider").val())
+                };
+            }
+            const dataJSON = JSON.stringify(data);
+            console.log('Emitting input data in handleSliderChange...', dataJSON);
+            socket.emit("input", dataJSON);
+        }
+
+        $("#gainSlider, #rangeSlider, #delaySlider").on("input", () => debounceSlider(handleSliderChange, 100));
+        $("#gainSlider, #rangeSlider, #delaySlider").on("mouseup", () => debounceSlider(handleSliderChange, 100));
+        $("#gain, #range, #delay").on("change", () => handleSliderChange(true));
+
+        // USB Toggle
+        $("#btnToggleUsb").click(() => {
+            manageUsbConnection();
+        });
+
+        // Experiment Start/Stop
+        $("#expButton").click(() => {
+            observedState.expRunning = !observedState.expRunning;
+            observedState.expName = $("#expNameInput").val();
+            socket.emit("systemstate", observedState);
+            // updateUI();
+        });
+
+        // Keep expName in sync with user typing
+        $("#expNameInput").on("input", function () {
+            observedState.expName = $(this).val();
+        });
+
+        // Control transfer buttons
+        $("#btnCtrlOut").click(() => {
+            socket.emit("transfercommand", {
+                command_type: "ctrl_out",
+                registerAddr: $("#ctrlOutRegAddr").val(),
+                data: $("#ctrlOutData").val()
+            });
+        });
+
+        $("#btnCtrlIn").click(() => {
+            socket.emit("transfercommand", {
+                command_type: "ctrl_in",
+                registerAddr: $("#ctrlInRegAddr").val(),
+                length: $("#ctrlInLength").val()
+            });
+        });
+
+        $("#btnDirectOrder").click(() => {
+            socket.emit("transfercommand", {
+                command_type: "direct_order_command",
+                direction: $("#directDirection").val(),
+                order: $("#directOrder").val(),
+                value: $("#directValue").val(),
+                index: $("#directIndex").val(),
+                lengthOrData: $("#directLenOrData").val()
+            });
+        });
+
+        // Mode Switch
+        $("#modeSwitchButton").click(() => {
+            if (!observedState.transmission) {
+                // Switch to Transmission
+                set_transmission_mode();
+            } else {
+                // Switch to Pulse-echo
+                set_pulse_echo_mode();
+            }
+        });
+
+        // Pulse Time
+        $("#pulseTimeInput").on("input", function () {
+            const val = parseFloat($(this).val());
+            console.log('Pulse time input changed to ', val, ' and observedState is ', observedState.pulseTime);
+            // Enable/disable the button if the input matches the last set
+            if (val === observedState.pulseTime) {
+                $("#pulseTimeButton").prop("disabled", true);
+            } else {
+                $("#pulseTimeButton").prop("disabled", false);
+            }
+        });
+
+        $("#pulseTimeButton").click(() => {
+            const currentValue = parseFloat($("#pulseTimeInput").val());
+            console.log('Sending pulse time value:', currentValue);
+            $.post('/set_pulse_time', { value: currentValue }, function (response) {
+                console.log('Pulse time set:', response);
+            });
+        });
+
+        function manageUsbConnection() {
+            const endpoint = observedState.usbConnected ? '/disconnectUSB' : '/connectUSB';
+            fetch(endpoint)
+                .then(response => response.text())
+                .then(data => {
+                    console.log(data);
+                    alert(data);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to send connect/disconnect request.');
+                });
+        }
+
+        // Plotly chart
+        let latestData = Array(2000).fill(128);
+        let chartContainer, plotlyLayout, plotlyTrace, plotlyData;
+
+        document.addEventListener('DOMContentLoaded', function () {
+            console.log("Loading chart...");
+            chartContainer = document.getElementById('chart');
+
+            plotlyLayout = {
+                title: 'OpBox waveform',
+                xaxis: { title: 'Time (µs)', range: [0, 20] },
+                yaxis: { title: 'Amplitude', range: [-1, 1] }
+            };
+
+            plotlyTrace = {
+                x: Array.from({ length: 2000 }, (_, i) => i * 20 / 2000),
+                y: latestData,
+                type: 'scatter',
+                mode: 'markers',
+                marker: { size: 4 }
+            };
+
+            plotlyData = [plotlyTrace];
+            Plotly.newPlot(chartContainer, plotlyData, plotlyLayout);
+        });
+
+        socket.on('waveform', (data) => {
+            if ((Date.now() - lastDataUpdate) > dataCooloff) {
+                console.log(`Received waveform data with ${data.data.length} points. Last update ${Date.now() - lastDataUpdate}ms ago.`);
+                const t0 = observedState.delay;
+                const ts = observedState.range / data.data.length;
+                const tf = t0 + observedState.range;
+                const xValues = Array.from({ length: data.data.length }, (_, i) => t0 + i * ts);
+                plotlyTrace.x = xValues;
+                plotlyTrace.y = data.data;
+                plotlyData = [plotlyTrace];
+                plotlyLayout.xaxis.range = [t0, tf];
+                Plotly.update(chartContainer, plotlyData, plotlyLayout);
+                lastDataUpdate = Date.now();
+            }
+        });
+
+        socket.on("disconnect", (reason) => {
+            console.warn("SocketIO disconnected. Reason: ", reason);
+            // Clear observedState
+            for (const prop in observedState) {
+                delete observedState[prop];
+            }
+            // Replace the page content
+            document.body.innerHTML = `
+                <div style="text-align:center; color:red; margin-top:50px;">
+                  <h1>Disconnected from server</h1>
+                  <p>Please reload this page once the server is running again.</p>
+                </div>
+            `;
+        });
+    </script>
+</body>
+
+</html>
